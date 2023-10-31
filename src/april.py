@@ -30,8 +30,11 @@ image = cv2.imread("image1.jpg")
 # Convert it to grayscale
 gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
+# Get the average value
+average_brightness = cv2.mean(gray_image)[0]
+
 # Apply binary thresholding
-ret, binary_image = cv2.threshold(gray_image, 127, 255, cv2.THRESH_BINARY)
+ret, binary_image = cv2.threshold(average_brightness, 127, 255, cv2.THRESH_BINARY)
 
 # Find contours
 contours, hierarchy = cv2.findContours(
