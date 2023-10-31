@@ -5,24 +5,23 @@ CONTOUR_PERMITER_THRESHOLD = 100
 LINE_SMOOTHING_EPSILON = 0.01
 
 
-# def reorder_vertices(contour):
-#     vertices = [contour[0][0], contour[1][0], contour[2][0], contour[3][0]]
-
-#     # Function to calculate distance from the origin
-#     def calculate_distance_from_origin(point):
-#         return math.sqrt(point[0] ** 2 + point[1] ** 2)
-
-#     # Add each vertex's distance from the origin along with the vertex itself to a new list
-#     vertices_with_distances = [
-#         (vertex, calculate_distance_from_origin(vertex)) for vertex in vertices
-#     ]
-
-#     # Sort vertices based on their distances from the origin
-#     sorted_vertices_with_distances = min(
-#         vertices_with_distances, key=lambda item: item[1]
-#     )
-
-#     print(sorted_vertices_with_distances[0])
+def find_quad_area(vertices):
+    line_lengths = []
+    for i, vertex in enumerate(vertices):
+        if i == len(vertices) - 1:
+            next_vertex = vertices[0]
+        else:
+            next_vertex = vertices[i + 1]
+        line_lengths.append(
+            math.sqrt(
+                abs(vertex[0] - next_vertex[0]) ** 2
+                + abs(next_vertex[1] - next_vertex[1]) ** 2
+            )
+        )
+    quad_area = 0.5 * (line_lengths[0] + line_lengths[1]) + 0.5 * (
+        line_lengths[2] + line_lengths[3]
+    )
+    return quad_area
 
 
 # Load an image
@@ -52,6 +51,15 @@ for contour in contours:
     approximated_contour = cv2.approxPolyDP(contour, epsilon, True)
     if len(approximated_contour) == 4:
         # reorder_vertices(approximated_contour)
+        vertices = [
+            approximated_contour[0][0],
+            approximated_contour[1][0],
+            approximated_contour[2][0],
+            approximated_contour[3][0],
+        ]
+        quad_area = find_quad_area(vertices)
+        if quad_area < 100:
+            continue
         cv2.drawContours(image, [approximated_contour], -1, (0, 255, 0), 2)
 
 cv2.imshow("Image with quadrilaterals", image)
