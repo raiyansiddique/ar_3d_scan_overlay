@@ -4,7 +4,7 @@ import numpy as np
 
 def homography(img_src, pts_src):
     img_src = cv2.imread(img_src)
-    img_dst = np.zeros((8, 8), dtype=np.uint8)
+    img_dst = np.zeros((500, 500), dtype=np.uint8)
     img_dst = cv2.merge((img_src, img_src, img_src))
 
     # im_dst = cv2.imread('square.jpg')
