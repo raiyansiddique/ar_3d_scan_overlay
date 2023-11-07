@@ -240,6 +240,10 @@ Other than that, OpenCV made it very easy to prototype ideas, and any other algo
 
 With more time, the project could be improved by:
 
+### Create Custom Markers
+
+With the way we structured our code, it is theoretically possible to implement detection for custom markers with shapes such as circles or arrows which may be useful in certain scenarios where square April Tags might not work.
+
 ### Machine Learning
 
 Implementing a machine learning-based approach for tag detection could improve robustness against noise and lighting variations. Popular algorithms include feature matching which is a great application for detecing April Tags since the tags have defined corners which is perfect for feature matching algorithms that use corners as prominent features.
@@ -247,3 +251,7 @@ Implementing a machine learning-based approach for tag detection could improve r
 ### Rigorous Variable Environment Testing
 
 Our team didn't have enough time in the end to setup rigorous testing for different distortions, lighting conditions, and false positive testing. If we had time, we would do grid testing with different constant parameters and enabling/disabling certain rejections while changing the environment. However, we were able to do timing analysis to see what changes to the code made improvements to the delay of the image processing.
+
+## Learning
+
+Our team wasn't very interested in the nitty gritty math behind these algorithms, but was more interested in creating something out of tools that already exist that could be used to create novel marker detection as mentioned in the improvements. We found that, with simple solutions to the problem of marker tracking, we were able to come up with a relatively fast and robust system of tracking April Tags. From this, we acquired some tools in our computer vision tool belt that we can use for projects down the road such as homographys, contour/polygon detection, matrix multiplication optimization, and rejection filters. This project ended up being very enjoyable since we didn't run into many pythonic roadblocks, but rather ran into design challenges which took more of our engineering/creative side to solve.
