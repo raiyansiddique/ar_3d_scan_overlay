@@ -1,37 +1,50 @@
 import cv2
 import math
 import numpy as np
+import time
 
-codes = {
+# Matrix representation of the 4x4 AprilTag codes
+CODES_4X4 = {
     "0": np.array(
-        [
-            [255, 0, 255, 0, 0],
-            [0, 255, 0, 255, 255],
-            [0, 255, 255, 0, 0],
-            [255, 0, 255, 0, 255],
-            [255, 255, 255, 0, 0],
-        ]
+        [[255, 0, 255, 255], [0, 255, 0, 255], [0, 0, 255, 255], [0, 0, 255, 0]]
     ),
     "1": np.array(
-        [
-            [0, 0, 0, 0, 255],
-            [255, 255, 0, 0, 0],
-            [0, 0, 0, 0, 255],
-            [255, 0, 255, 255, 255],
-            [0, 0, 255, 255, 0],
-        ]
+        [[0, 0, 0, 0], [255, 255, 255, 255], [255, 0, 0, 255], [255, 0, 255, 0]]
+    ),
+    "2": np.array(
+        [[0, 0, 255, 255], [0, 0, 255, 255], [0, 0, 255, 0], [255, 255, 0, 255]]
+    ),
+    "3": np.array(
+        [[255, 0, 0, 255], [255, 0, 0, 255], [0, 255, 0, 0], [0, 255, 255, 0]]
+    ),
+    "4": np.array(
+        [[0, 255, 0, 255], [0, 255, 0, 0], [255, 0, 0, 255], [255, 255, 255, 0]]
     ),
 }
 
-CONTOUR_PERMITER_THRESHOLD = 100
+# Thresholds for rejecting unfit quadrilaterals
+CONTOUR_PERIMETER_THRESHOLD = 100
+MINIMUM_QUAD_AREA = 0.000001
 LINE_SMOOTHING_EPSILON = 0.03
+
+# Bigger image size means more accurate homography
 DST_IMG_SIZE = 128
-APRIL_TAG_WIDTH = 7
-IMAGE_PATH = "markers.jpg"
-MINIMUM_QUAD_AREA = 0.001
+APRIL_TAG_WIDTH = 6
+
+# Toggle checks on quadrilateral
+PERIMETER_TOO_SMALL_CHECK = 1
+IS_QUAD_CONCAVE_CHECK = 1
+QUAD_AREA_TOO_SMALL_CHECK = 1
 
 
-def create_dst_grid():
+def create_square_grid():
+    """
+    Creates a grid of points for the square image based on the desired grid size and AprilTag width.
+
+    Returns:
+    np.array: A numpy array of shape (APRIL_TAG_WIDTH, APRIL_TAG_WIDTH, 3) containing the coordinates of each point in the grid.
+    """
+
     # Calculate the spacing between points based on the desired grid size
     step_size = DST_IMG_SIZE / (APRIL_TAG_WIDTH)
     half_step_size = step_size / 2
@@ -50,10 +63,77 @@ def create_dst_grid():
     return np.array(grid_points)
 
 
-DST_GRID = create_dst_grid()
+DST_GRID = create_square_grid()
+
+
+def is_quad_concave(vertices):
+    """
+    Determines whether a quadrilateral defined by the given vertices is concave.
+
+    Args:
+        vertices (list): A list of four points, each represented as a tuple of (x, y) coordinates.
+
+    Returns:
+        bool: True if the quadrilateral is concave, False otherwise.
+    """
+    # Ensure the vertices are ordered consistently (e.g., clockwise or counterclockwise)
+    # vertices should be a list of points, e.g., [(x1, y1), (x2, y2), (x3, y3), (x4, y4)]
+    n = len(vertices)
+    sign = 0
+    for i in range(n):
+        p1 = vertices[i]
+        p2 = vertices[(i + 1) % n]
+        p3 = vertices[(i + 2) % n]
+
+        # Compute vectors for the edges: v1 from p1 to p2, v2 from p2 to p3
+        v1 = np.array(p2) - np.array(p1)
+        v2 = np.array(p3) - np.array(p2)
+
+        # Calculate the Z component of the cross product (v1 x v2)
+        cross_product_z = np.cross(v1, v2)
+        # If the sign changes, we have a concave corner
+        if i == 0:  # First corner, just record the sign
+            sign = np.sign(cross_product_z)
+        else:
+            if np.sign(cross_product_z) != sign:
+                return True  # Concave corner detected
+
+    return False  # No concave corners detected
+
+
+def quad_too_small(corners):
+    """
+    Check if the detected quadrilateral is too small.
+
+    Args:
+        corners (list): List of four corner points of the quadrilateral.
+
+    Returns:
+        bool: True if the quadrilateral is too small, False otherwise.
+    """
+    # Find area of detected quadrilateral
+    quad_area = find_quad_area(corners)
+
+    # Make area proportional to the image size
+    image_area = IMAGE_WIDTH * IMAGE_HEIGHT
+    quad_area_proportional = quad_area / image_area
+
+    # Filter out quadrilaterals that are too small
+    if quad_area_proportional < MINIMUM_QUAD_AREA:
+        return True
+    return False
 
 
 def find_quad_area(corners):
+    """
+    Calculates the area of a quadrilateral given its four corners.
+
+    Args:
+        corners (list of tuples): The (x, y) coordinates of the four corners of the quadrilateral.
+
+    Returns:
+        float: The area of the quadrilateral.
+    """
     n = len(corners)
     area = 0.0
     for i in range(n):
@@ -64,15 +144,43 @@ def find_quad_area(corners):
     return area
 
 
-def match_code(code):
-    for key in codes:
-        for i in range(4):
-            if np.array_equal(code, np.rot90(codes[key], i)):
-                return key
-    return None
+def homography(quad_corners):
+    """
+    Calculates the inverse homography matrix from a set of corners of a square to a set of corners of a quadrilateral.
+
+    Args:
+        quad_corners (numpy.ndarray): An array of shape (4, 2) containing the (x, y) coordinates of the square corners.
+
+    Returns:
+        numpy.ndarray: An array of shape (3, 3) representing the inverse homography matrix.
+    """
+    square_corners = np.array(
+        [
+            [0, 0],
+            [DST_IMG_SIZE - 1, 0],
+            [DST_IMG_SIZE - 1, DST_IMG_SIZE - 1],
+            [0, DST_IMG_SIZE - 1],
+        ],
+        dtype="float32",
+    )
+
+    # Calculate the inverse homography matrix from the destination (square) to the source (quad)
+    homography, _ = cv2.findHomography(square_corners, quad_corners)
+    return homography
 
 
 def apply_homography_to_grid(grid_points, homography):
+    """
+    Applies a homography matrix to a grid of points.
+
+    Args:
+        grid_points (numpy.ndarray): A grid of points in 3D space, with shape (rows, cols, 3).
+        homography (numpy.ndarray): A 3x3 homography matrix.
+
+    Returns:
+        numpy.ndarray: The transformed grid of points in 2D space, with shape (rows, cols, 3).
+    """
+
     # Flatten the grid to a (N, 3) matrix where N is grid_size^2
     flat_grid_points = grid_points.reshape(-1, 3).T
 
@@ -91,8 +199,8 @@ def apply_homography_to_grid(grid_points, homography):
     )
 
     # Append a third column of ones to represent the homogeneous coordinate
-    ones = np.ones((grid_points.shape[0], grid_points.shape[1], 1))
-    transformed_grid = np.concatenate([transformed_grid, ones], axis=2)
+    # ones = np.ones((grid_points.shape[0], grid_points.shape[1], 1))
+    # transformed_grid = np.concatenate([transformed_grid, ones], axis=2)
 
     return transformed_grid
 
@@ -114,26 +222,25 @@ def extract_pixel_values(image, coords):
     return pixel_values
 
 
-def homography(pts_src):
-    # Assuming pts_src is correctly provided as the four corners of the quad
-    # and pts_dst is the target square's corners.
-    pts_dst = np.array(
-        [
-            [0, 0],
-            [DST_IMG_SIZE - 1, 0],
-            [DST_IMG_SIZE - 1, DST_IMG_SIZE - 1],
-            [0, DST_IMG_SIZE - 1],
-        ],
-        dtype="float32",
-    )
+def match_code(code):
+    """
+    Matches a given 4x4 april tag matrix with the dictionary of known codes.
 
-    # Calculate the inverse homography matrix from the destination (square) to the source (quad)
-    h_inv, _ = cv2.findHomography(pts_dst, pts_src)
-    return h_inv
+    Args:
+        code (numpy.ndarray): A 4x4 numpy array representing the code to be matched.
+
+    Returns:
+        str: The key of the matched code in the CODES_4X4 dictionary, or None if no match is found.
+    """
+    for key in CODES_4X4:
+        for i in range(4):
+            if np.array_equal(code, np.rot90(CODES_4X4[key], i)):
+                return key
+    return None
 
 
 # Load an image
-image = cv2.imread(IMAGE_PATH)
+image = cv2.imread("marker.jpg")
 
 IMAGE_WIDTH = image.shape[1]
 IMAGE_HEIGHT = image.shape[0]
@@ -157,7 +264,7 @@ contours, hierarchy = cv2.findContours(
 for contour in contours:
     # Calculate the arc length (perimeter) of your contour
     contour_perimeter = cv2.arcLength(contour, True)
-    if contour_perimeter < CONTOUR_PERMITER_THRESHOLD:
+    if contour_perimeter < CONTOUR_PERIMETER_THRESHOLD:
         continue
 
     # Use the arc length to help determine the 'epsilon' parameter
@@ -165,7 +272,6 @@ for contour in contours:
 
     # Use approxPolyDP to simplify your contour
     approximated_contour = cv2.approxPolyDP(contour, epsilon, True)
-    # cv2.drawContours(image, [approximated_contour], -1, (0, 255, 0), 2)
 
     if len(approximated_contour) == 4:
         vertices = np.array(
@@ -229,5 +335,6 @@ for contour in contours:
             cv2.drawContours(image, [approximated_contour], -1, (0, 255, 0), 2)
 
 cv2.imshow("Image with quadrilaterals", image)
+cv2.imwrite("quad.jpg", image)
 cv2.waitKey(0)
 cv2.destroyAllWindows()
