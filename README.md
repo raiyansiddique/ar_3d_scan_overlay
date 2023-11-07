@@ -16,7 +16,7 @@ OpenCV already has a robust April Tag detection library, but creating one from s
 
 The problem was approached by utilizing the OpenCV library and Python programming language, leveraging computer vision and image processing techniques to detect AprilTags. Our detection script follows a pipeline that is defined below:
 
-### Detection Algorithm
+## Detection Algorithm
 
 ### Binary Thresholding
 
