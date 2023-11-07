@@ -218,6 +218,12 @@ It even works well with very distorted April Tags.
     <img src="./media/distorted.jpg" alt="April Tag" width="300" />
 </div>
 
+And a video!
+
+<div style="text-align: center">
+    <img src="./media/demo.gif" alt="April Tag" width="300" />
+</div>
+
 ## Design Decision
 
 ### Homographys
